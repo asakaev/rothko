@@ -1,6 +1,7 @@
 package io.github.asakaev.rothko
 
 import cats.Eq
+import fs2._
 
 object FloodFill {
 
@@ -19,15 +20,28 @@ object FloodFill {
     if (inside(cv, p)) cv.updated(p.y, cv(p.y).updated(p.x, c))
     else cv
 
-  def floodFill(cv: Canvas, p: Pos, tc: Color): Canvas =
-    color(cv, p) match {
-      case Some(cc) if Eq[Color].neqv(cc, tc) =>
-        p.neighbours
-          .filter(color(cv, _).exists(Eq[Color].eqv(_, cc)))
-          .foldLeft(paint(cv, p, tc)) { (s, p) =>
-            floodFill(s, p, tc)
+  def floodFill(canvas: Canvas, pos: Pos, target: Color): Canvas =
+    color(canvas, pos) match {
+      case Some(replacement) if Eq[Color].neqv(replacement, target) =>
+        pos.neighbours
+          .filter(color(canvas, _).exists(Eq[Color].eqv(_, replacement)))
+          .foldLeft(paint(canvas, pos, target)) { (s, p) =>
+            floodFill(s, p, target)
           }
-      case _ => cv
+      case _ => canvas
+    }
+
+  def streamFill(canvas: Canvas, pos: Pos, target: Color): Stream[Pure, Canvas] =
+    Stream(color(canvas, pos)).unNone.flatMap { replacement =>
+      Stream.unfold((canvas, List(pos))) {
+        case (_, Nil) => None
+        case (cv0, p :: stack) =>
+          val cv = paint(cv0, p, target)
+          val seeds = p.neighbours.toList.filter {
+            color(cv, _).exists(c => Eq[Color].eqv(c, replacement) && Eq[Color].neqv(c, target))
+          }
+          Some(cv -> (cv -> (seeds ++ stack)))
+      }
     }
 
 }
